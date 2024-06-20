@@ -1,0 +1,8 @@
+# dirs
+build/
+filesystem/
+
+# files 
+.checkpatch*
+compile_commands*
+*.z64
