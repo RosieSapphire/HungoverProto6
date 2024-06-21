@@ -6,3 +6,4 @@ filesystem/
 .checkpatch*
 compile_commands*
 *.z64
+*.blend1

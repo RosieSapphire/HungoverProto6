@@ -5,6 +5,6 @@
 
 #define ABS(X) ((X < 0) ? -X : X)
 
-void t3d_vec3_scale(T3DVec3 *dst, const T3DVec3 *x, const float s);
+void t3d_vec3_scale(T3DVec3 *dst, const T3DVec3 *src, const float s);
 
 #endif /* _UTIL_H_ */

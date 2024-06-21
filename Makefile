@@ -5,6 +5,7 @@ include $(N64_INST)/include/n64.mk
 include $(T3D_INST)/t3d.mk
 
 MKSPRITE_FLAGS ?= -c 2
+AUDIOCONV_FLAGS ?= --wav-compress 1
 
 TARGET := hungover_proto6
 ROM := $(TARGET).z64
@@ -19,9 +20,11 @@ O_FILES := $(C_FILES:%.c=$(BUILD_DIR)/%.o)
 DEP_FILES := $(O_FILES:%.o=%.d)
 
 ASSETS_PNG := $(wildcard assets/*.png)
+ASSETS_WAV := $(wildcard assets/*.wav)
 ASSETS_GLB := $(wildcard assets/*.glb)
-ASSETS_CONV := $(ASSETS_GLB:assets/%.glb=filesystem/%.t3dm) \
-	       $(ASSETS_PNG:assets/%.png=filesystem/%.sprite)
+ASSETS_CONV := $(ASSETS_PNG:assets/%.png=filesystem/%.sprite) \
+	       $(ASSETS_WAV:assets/%.wav=filesystem/%.wav64) \
+	       $(ASSETS_GLB:assets/%.glb=filesystem/%.t3dm)
 
 N64_CFLAGS += $(INC_DIRS:%=-I%)
 ifeq ($(DEBUG), 1)
@@ -35,6 +38,11 @@ filesystem/%.sprite: assets/%.png
 	@mkdir -p $(dir $@)
 	@echo "    [SPRITE] $@"
 	$(N64_MKSPRITE) $(MKSPRITE_FLAGS) -o filesystem "$<"
+
+filesystem/%.wav64: assets/%.wav
+	@mkdir -p $(dir $@)
+	@echo "    [SAMPLE] $@"
+	$(N64_AUDIOCONV) $(AUDIOCONV_FLAGS) -o filesystem "$<"
 
 filesystem/%.t3dm: assets/%.glb
 	@mkdir -p $(dir $@)
@@ -54,10 +62,7 @@ clean:
 
 -include $(DEP_FILES)
 
-BETTY_FLAGS := --show-types -strict -subjective \
-	       --ignore=CAMELCASE,C99_COMMENTS,FUNCTIONS
-LINT_SCAN := $(filter-out include/types.h,$(H_FILES) $(C_FILES))
+FORMAT_SCAN := $(H_FILES) $(C_FILES)
 
-lint:
-	clang-format -i --style=file $(LINT_SCAN)
-	betty-style $(BETTY_FLAGS) $(LINT_SCAN)
+format:
+	clang-format -i --style=file $(FORMAT_SCAN)

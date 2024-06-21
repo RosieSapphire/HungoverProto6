@@ -19,4 +19,7 @@
 
 #define STICK_DEADZONE 2
 
+#define AUDIO_FREQ 44100
+#define AUDIO_BUF_CNT 1
+
 #endif /* _CONFIG_H_ */
