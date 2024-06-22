@@ -9,18 +9,14 @@
 #include "engine/player.h"
 
 #define PLAYER_HEI 128
-#define PLAYER_ACCEL 0.16f
+#define PLAYER_ACCEL 0.32f
 #define PLAYER_STOPSPEED (PLAYER_ACCEL * 10.0f)
 #define PLAYER_MAXSPEED 320
-#define PLAYER_FRICTION 4
+#define PLAYER_FRICTION 6
 #define PLAYER_FRONTSPEED 200
 #define PLAYER_SIDESPEED 350
 // #define PLAYER_GRAVITY 800
-#define PLAYER_TURN_SPEED 0.08f
-
-void player_weapon_dls_init(void)
-{
-}
+#define PLAYER_TURN_SPEED 0.002f
 
 void player_init(player_t *p, const float x, const float y, const float z,
 		 const float yaw, const float pitch)
@@ -41,13 +37,16 @@ void player_init(player_t *p, const float x, const float y, const float z,
 }
 
 void player_get_camera(const player_t *p, T3DVec3 *eye, T3DVec3 *foc,
-		       T3DVec3 *up, const float subtick)
+		       T3DVec3 *up, const float subtick, const float shake_val,
+		       const float shake_dir[2])
 {
 	const float rad[2] = {
 		T3D_DEG_TO_RAD(
-			t3d_lerp(p->angles_old[0], p->angles_new[0], subtick)),
+			t3d_lerp(p->angles_old[0], p->angles_new[0], subtick) +
+			(shake_dir[0] * shake_val)),
 		T3D_DEG_TO_RAD(
-			t3d_lerp(p->angles_old[1], p->angles_new[1], subtick)),
+			t3d_lerp(p->angles_old[1], p->angles_new[1], subtick) +
+			(shake_dir[1] * shake_val)),
 	};
 
 	*up = (T3DVec3){ { 0, 1, 0 } };
@@ -77,8 +76,11 @@ void player_get_vecs(T3DVec3 *forw, T3DVec3 *side, const T3DVec3 *eye,
 		t3d_vec3_cross(side, forw, &(T3DVec3){ { 0, 1, 0 } });
 }
 
-static void player_update_look(player_t *p, const joypad_inputs_t held)
+void player_update(player_t *p, const joypad_inputs_t held,
+		   const joypad_buttons_t press, const float shake_val,
+		   const float shake_dir[2])
 {
+	/* looking */
 	const s8 stick[2] = {
 		held.stick_x * (ABS(held.stick_x) > STICK_DEADZONE),
 		held.stick_y * (ABS(held.stick_y) > STICK_DEADZONE),
@@ -88,10 +90,9 @@ static void player_update_look(player_t *p, const joypad_inputs_t held)
 	p->angles_old[1] = p->angles_new[1];
 	p->angles_new[0] += stick[0] * PLAYER_TURN_SPEED;
 	p->angles_new[1] -= stick[1] * PLAYER_TURN_SPEED;
-}
 
-static void player_update_friction(player_t *p)
-{
+	/* TODO: Implement Jumping */
+
 	const float speed =
 		sqrtf(p->vel[0] * p->vel[0] + p->vel[1] * p->vel[1] +
 		      p->vel[2] * p->vel[2]);
@@ -111,27 +112,9 @@ static void player_update_friction(player_t *p)
 	p->vel[0] *= newspeed;
 	p->vel[1] *= newspeed;
 	p->vel[2] *= newspeed;
-}
 
-static void player_update_acceleration(player_t *p, const T3DVec3 *wishdir,
-				       const float wishspeed)
-{
-	const float currentspeed = t3d_vec3_dot((T3DVec3 *)p->vel, wishdir);
-	const float addspeed = wishspeed - currentspeed;
-	if (addspeed <= 0.0f)
-		return;
-	float accelspeed = wishspeed * PLAYER_ACCEL * SECONDS_PER_UPDATE;
-	if (accelspeed > addspeed)
-		accelspeed = addspeed;
-
-	for (int i = 0; i < 3; i++)
-		p->vel[i] += accelspeed * wishdir->v[i];
-}
-
-static void player_update_air_movement(player_t *p, const joypad_inputs_t held)
-{
 	T3DVec3 forw, side, eye, foc, up;
-	player_get_camera(p, &eye, &foc, &up, 1.0f);
+	player_get_camera(p, &eye, &foc, &up, 1.0f, shake_val, shake_dir);
 	player_get_vecs(&forw, &side, &eye, &foc);
 	forw.v[1] = 0.0f;
 	side.v[1] = 0.0f;
@@ -146,19 +129,23 @@ static void player_update_air_movement(player_t *p, const joypad_inputs_t held)
 		0,
 		forw.v[2] * fmove + side.v[2] * smove,
 	} };
-	float wishspeed = t3d_vec3_len(&wishvel);
+	const float wishspeed = t3d_vec3_len(&wishvel);
 	T3DVec3 wishdir;
 	if (wishspeed)
 		t3d_vec3_scale(&wishdir, &wishvel, 1.0f / wishspeed);
 	else
 		wishdir = (T3DVec3){ { 0, 0, 0 } };
-	if (wishspeed > PLAYER_MAXSPEED) {
-		t3d_vec3_scale(&wishvel, &wishvel, PLAYER_MAXSPEED / wishspeed);
-		wishspeed = PLAYER_MAXSPEED;
-	}
-
 	p->vel[1] = 0;
-	player_update_acceleration(p, &wishdir, wishspeed);
+	const float currentspeed = t3d_vec3_dot((T3DVec3 *)p->vel, &wishdir);
+	const float addspeed = wishspeed - currentspeed;
+	if (addspeed <= 0.0f)
+		return;
+	float accelspeed = wishspeed * PLAYER_ACCEL * SECONDS_PER_UPDATE;
+	if (accelspeed > addspeed)
+		accelspeed = addspeed;
+
+	for (int i = 0; i < 3; i++)
+		p->vel[i] += accelspeed * wishdir.v[i];
 	// p->vel[1] -= PLAYER_GRAVITY * SECONDS_PER_UPDATE;
 	for (int i = 0; i < 3; i++)
 		p->pos_old[i] = p->pos_new[i];
@@ -173,18 +160,4 @@ static void player_update_air_movement(player_t *p, const joypad_inputs_t held)
 
 	PM_FlyMove();
 	*/
-}
-
-void player_update(player_t *p, const joypad_inputs_t held,
-		   const joypad_buttons_t press)
-{
-	player_update_look(p, held);
-	/* TODO: Implement Jumping */
-	player_update_friction(p);
-	player_update_air_movement(p, held);
-
-	if (press.z)
-		sfx_gunshot_play(MIXER_CH_GUNSHOT_NEAR);
-	if (press.r)
-		sfx_gunshot_play(MIXER_CH_GUNSHOT_FAR);
 }

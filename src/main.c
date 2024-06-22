@@ -1,7 +1,9 @@
 #include <libdragon.h>
 #include <t3d/t3d.h>
 #include <t3d/t3dmodel.h>
+#include <t3d/t3danim.h>
 
+#include "util.h"
 #include "config.h"
 #include "types.h"
 
@@ -27,9 +29,15 @@ static T3DMat4FP *room_mat_fp;
 
 /* weapons */
 static T3DModel *pistol_t3dm;
+static T3DSkeleton pistol_skel;
+static T3DAnim pistol_anim_idle, pistol_anim_fire;
 static rspq_block_t *pistol_dl;
 static T3DMat4 weapon_mat;
 static T3DMat4FP *weapon_mat_fp;
+
+/* visual */
+static float camshake_val;
+static float camshake_dir[2];
 
 static void init(void)
 {
@@ -58,8 +66,56 @@ static void init(void)
 				    PROJ_FAR);
 
 	pistol_t3dm = t3d_model_load("rom:/pistol.t3dm");
+	pistol_skel = t3d_skeleton_create(pistol_t3dm);
+	pistol_anim_idle = t3d_anim_create(pistol_t3dm, "Idle");
+	t3d_anim_set_looping(&pistol_anim_idle, 1);
+	t3d_anim_set_playing(&pistol_anim_idle, 1);
+	t3d_anim_set_time(&pistol_anim_idle, 0.0f);
+	t3d_anim_attach(&pistol_anim_idle, &pistol_skel);
+	pistol_anim_fire = t3d_anim_create(pistol_t3dm, "Fire");
+	t3d_anim_set_looping(&pistol_anim_fire, 0);
+	t3d_anim_set_playing(&pistol_anim_fire, 0);
+	t3d_anim_set_time(&pistol_anim_fire, 0.0f);
+	t3d_anim_attach(&pistol_anim_fire, &pistol_skel);
 	weapon_mat_fp = malloc_uncached(sizeof(*weapon_mat_fp));
 	player_init(&player, 0, 0, 128, -90, 0);
+}
+
+static void update(void)
+{
+	joypad_buttons_t press = joypad_get_buttons_pressed(JOYPAD_PORT_1);
+	joypad_poll();
+	camshake_val *= 0.84f;
+	if (camshake_val < 0.01f)
+		camshake_val = 0;
+	if (press.z) {
+		camshake_val += (float)(0xBFFE + (rand() & 0x3FFF)) / 0x3FFF;
+		if (camshake_val > 100)
+			camshake_val = 100;
+		for (int i = 0; i < 2; i++)
+			camshake_dir[i] = ((u16)rand() - (UINT16_MAX >> 1));
+		const float camshake_len =
+			sqrtf(camshake_dir[0] * camshake_dir[0] +
+			      camshake_dir[1] * camshake_dir[1]);
+		if (camshake_len) {
+			camshake_dir[0] /= camshake_len;
+			camshake_dir[1] /= camshake_len;
+			if (camshake_dir[1] < 0)
+				camshake_dir[1] *= -1;
+		}
+		camshake_dir[0] *= 0.2f;
+		debugf("%f, %f\n", camshake_dir[0], camshake_dir[1]);
+		t3d_anim_set_playing(&pistol_anim_fire, 1);
+		t3d_anim_set_time(&pistol_anim_idle, 0.0f);
+		t3d_anim_set_time(&pistol_anim_fire, 0.0f);
+		sfx_gunshot_play(MIXER_CH_GUNSHOT_NEAR);
+	}
+	t3d_anim_update(&pistol_anim_idle,
+			SECONDS_PER_UPDATE * (!pistol_anim_fire.isPlaying));
+	t3d_anim_update(&pistol_anim_fire, SECONDS_PER_UPDATE);
+	t3d_skeleton_update(&pistol_skel);
+	player_update(&player, joypad_get_inputs(JOYPAD_PORT_1), press,
+		      camshake_val, camshake_dir);
 }
 
 static void render(const float subtick, const u64 timer_old,
@@ -67,7 +123,8 @@ static void render(const float subtick, const u64 timer_old,
 {
 	T3DVec3 eye, foc, up;
 
-	player_get_camera(&player, &eye, &foc, &up, subtick);
+	player_get_camera(&player, &eye, &foc, &up, subtick, camshake_val,
+			  camshake_dir);
 
 	t3d_mat4_identity(&room_mat);
 	t3d_mat4_to_fixed(room_mat_fp, &room_mat);
@@ -105,8 +162,11 @@ static void render(const float subtick, const u64 timer_old,
 
 	/* player viewmodel */
 	t3d_mat4_identity(&weapon_mat);
-	t3d_mat4_rotate(&weapon_mat, &(T3DVec3){ { 0, 1, 0 } },
-			T3D_DEG_TO_RAD(-90));
+	t3d_mat4_rotate(&weapon_mat, &(T3DVec3){ { 1, 0, 0 } },
+			T3D_DEG_TO_RAD(((camshake_dir[1] * camshake_val * 8))));
+	t3d_mat4_rotate(
+		&weapon_mat, &(T3DVec3){ { 0, 1, 0 } },
+		T3D_DEG_TO_RAD((-90 + (camshake_dir[0] * camshake_val * 4))));
 	t3d_mat4_translate(&weapon_mat, 32, -32, 0);
 	t3d_mat4_to_fixed(weapon_mat_fp, &weapon_mat);
 
@@ -121,7 +181,7 @@ static void render(const float subtick, const u64 timer_old,
 	if (!pistol_dl) {
 		rspq_block_begin();
 		t3d_matrix_push(weapon_mat_fp);
-		t3d_model_draw(pistol_t3dm);
+		t3d_model_draw_skinned(pistol_t3dm, &pistol_skel);
 		t3d_matrix_pop(1);
 		pistol_dl = rspq_block_end();
 	}
@@ -143,10 +203,7 @@ int main(void)
 		timer_old = timer_new;
 		timer_accum += timer_dif;
 		while (timer_accum >= TICKS_PER_UPDATE) {
-			joypad_poll();
-			player_update(
-				&player, joypad_get_inputs(JOYPAD_PORT_1),
-				joypad_get_buttons_pressed(JOYPAD_PORT_1));
+			update();
 			timer_accum -= TICKS_PER_UPDATE;
 		}
 		subtick = (float)timer_accum / TICKS_PER_UPDATE;
