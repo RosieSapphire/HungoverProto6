@@ -8,8 +8,7 @@
 #include "engine/noise.h"
 #include "engine/player.h"
 
-#define PLAYER_HEI 128
-#define PLAYER_ACCEL 0.32f
+#define PLAYER_ACCEL 0.16f
 #define PLAYER_STOPSPEED (PLAYER_ACCEL * 10.0f)
 #define PLAYER_MAXSPEED 320
 #define PLAYER_FRICTION 6
@@ -57,7 +56,7 @@ void player_get_camera(const player_t *p, T3DVec3 *eye, T3DVec3 *foc,
 			  t3d_lerp(p->pos_old[0], p->pos_new[0], subtick),
 			  t3d_lerp(p->pos_old[1], p->pos_new[1], subtick),
 			  t3d_lerp(p->pos_old[2], p->pos_new[2], subtick) } },
-		&(T3DVec3){ { 0, PLAYER_HEI, 0 } });
+		&(T3DVec3){ { 0, PLAYER_EYE_HEI, 0 } });
 	t3d_vec3_add(foc, eye,
 		     &(T3DVec3){ {
 			     /* dir */
@@ -70,6 +69,8 @@ void player_get_camera(const player_t *p, T3DVec3 *eye, T3DVec3 *foc,
 void player_get_vecs(T3DVec3 *forw, T3DVec3 *side, const T3DVec3 *eye,
 		     const T3DVec3 *foc)
 {
+	assertf(eye, "Eye is required for player vecs.\n");
+	assertf(foc, "Focus is required for player vecs.\n");
 	t3d_vec3_diff(forw, foc, eye);
 	t3d_vec3_norm(forw);
 	if (side)
@@ -93,26 +94,27 @@ void player_update(player_t *p, const joypad_inputs_t held,
 
 	/* TODO: Implement Jumping */
 
+	/* friction */
 	const float speed =
 		sqrtf(p->vel[0] * p->vel[0] + p->vel[1] * p->vel[1] +
 		      p->vel[2] * p->vel[2]);
-	if (speed < 1) {
+	if (speed > 0) {
+		const float drop =
+			(speed < PLAYER_STOPSPEED ? PLAYER_STOPSPEED : speed) *
+			PLAYER_FRICTION * SECONDS_PER_UPDATE;
+		float newspeed = speed - drop;
+		if (newspeed < 0.0f)
+			newspeed = 0.0f;
+		newspeed /= speed;
+
+		p->vel[0] *= newspeed;
+		p->vel[1] *= newspeed;
+		p->vel[2] *= newspeed;
+
+	} else {
 		p->vel[0] = 0.0f;
 		p->vel[2] = 0.0f;
-		return;
 	}
-	const float drop =
-		(speed < PLAYER_STOPSPEED ? PLAYER_STOPSPEED : speed) *
-		PLAYER_FRICTION * SECONDS_PER_UPDATE;
-	float newspeed = speed - drop;
-	if (newspeed < 0.0f)
-		newspeed = 0.0f;
-	newspeed /= speed;
-
-	p->vel[0] *= newspeed;
-	p->vel[1] *= newspeed;
-	p->vel[2] *= newspeed;
-
 	T3DVec3 forw, side, eye, foc, up;
 	player_get_camera(p, &eye, &foc, &up, 1.0f, shake_val, shake_dir);
 	player_get_vecs(&forw, &side, &eye, &foc);
@@ -138,15 +140,15 @@ void player_update(player_t *p, const joypad_inputs_t held,
 	p->vel[1] = 0;
 	const float currentspeed = t3d_vec3_dot((T3DVec3 *)p->vel, &wishdir);
 	const float addspeed = wishspeed - currentspeed;
-	if (addspeed <= 0.0f)
-		return;
-	float accelspeed = wishspeed * PLAYER_ACCEL * SECONDS_PER_UPDATE;
-	if (accelspeed > addspeed)
-		accelspeed = addspeed;
+	if (addspeed > 0.0f) {
+		float accelspeed =
+			wishspeed * PLAYER_ACCEL * SECONDS_PER_UPDATE;
+		if (accelspeed > addspeed)
+			accelspeed = addspeed;
 
-	for (int i = 0; i < 3; i++)
-		p->vel[i] += accelspeed * wishdir.v[i];
-	// p->vel[1] -= PLAYER_GRAVITY * SECONDS_PER_UPDATE;
+		for (int i = 0; i < 3; i++)
+			p->vel[i] += accelspeed * wishdir.v[i];
+	}
 	for (int i = 0; i < 3; i++)
 		p->pos_old[i] = p->pos_new[i];
 	t3d_vec3_add((T3DVec3 *)p->pos_new, (T3DVec3 *)p->pos_new,

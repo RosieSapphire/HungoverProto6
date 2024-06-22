@@ -4,6 +4,10 @@
 #include <libdragon.h>
 #include <t3d/t3dmath.h>
 
+//#define PLAYER_ARM_HEI 61
+#define PLAYER_ARM_HEI 86
+#define PLAYER_EYE_HEI 95
+
 typedef struct {
 	float pos_old[3], pos_new[3];
 	float vel[3];
