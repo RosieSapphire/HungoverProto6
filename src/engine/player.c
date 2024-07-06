@@ -8,10 +8,10 @@
 #include "engine/noise.h"
 #include "engine/player.h"
 
-#define PLAYER_ACCEL 0.16f
+#define PLAYER_ACCEL (held.btn.r ? 0.08f : 0.02f)
 #define PLAYER_STOPSPEED (PLAYER_ACCEL * 10.0f)
 #define PLAYER_MAXSPEED 320
-#define PLAYER_FRICTION 6
+#define PLAYER_FRICTION 4
 #define PLAYER_FRONTSPEED 200
 #define PLAYER_SIDESPEED 350
 // #define PLAYER_GRAVITY 800

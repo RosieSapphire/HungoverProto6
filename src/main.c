@@ -12,8 +12,7 @@
 #include "engine/sfx.h"
 
 #define THETA_SPEED 64
-#define WEAPON_HELD_POS_LERP_SPEED 12
-#define WEAPON_HELD_ANG_LERP_SPEED 18
+#define WEAPON_HELD_LERP_SPEED 18
 
 static player_t player;
 
@@ -37,7 +36,7 @@ static T3DSkeleton pistol_skel;
 static T3DAnim pistol_anim_idle, pistol_anim_fire;
 static rspq_block_t *pistol_dl;
 static T3DVec3 weapon_hold_target;
-static T3DVec3 weapon_hold_current;
+static T3DVec3 weapon_hold_current_old, weapon_hold_current_new;
 static float weapon_angle_target[2];
 static float weapon_angle_current[2];
 
@@ -109,7 +108,7 @@ static void update(void)
 		t3d_anim_set_playing(&pistol_anim_fire, 1);
 		t3d_anim_set_time(&pistol_anim_idle, 0.0f);
 		t3d_anim_set_time(&pistol_anim_fire, 0.0f);
-		sfx_gunshot_play(MIXER_CH_GUNSHOT_NEAR);
+		sfx_gunshot_play(MIXER_CH_GUNSHOT_FAR);
 	}
 	t3d_anim_update(&pistol_anim_idle,
 			SECONDS_PER_UPDATE * (-pistol_anim_fire.isPlaying + 1));
@@ -132,15 +131,16 @@ static void update(void)
 	t3d_vec3_scale(&side, &side, 7);
 	t3d_vec3_add(&weapon_hold_target, &weapon_hold_target, &forw);
 	t3d_vec3_add(&weapon_hold_target, &weapon_hold_target, &side);
-	t3d_vec3_lerp(&weapon_hold_current, &weapon_hold_current,
+	weapon_hold_current_old = weapon_hold_current_new;
+	t3d_vec3_lerp(&weapon_hold_current_new, &weapon_hold_current_new,
 		      &weapon_hold_target,
-		      SECONDS_PER_UPDATE * WEAPON_HELD_POS_LERP_SPEED);
+		      SECONDS_PER_UPDATE * WEAPON_HELD_LERP_SPEED);
 	weapon_angle_current[0] =
 		t3d_lerp(weapon_angle_target[0], weapon_angle_target[0],
-			 SECONDS_PER_UPDATE * WEAPON_HELD_ANG_LERP_SPEED);
+			 SECONDS_PER_UPDATE * WEAPON_HELD_LERP_SPEED);
 	weapon_angle_current[1] =
 		t3d_lerp(weapon_angle_target[1], weapon_angle_target[1],
-			 SECONDS_PER_UPDATE * WEAPON_HELD_ANG_LERP_SPEED);
+			 SECONDS_PER_UPDATE * WEAPON_HELD_LERP_SPEED);
 }
 
 static void render(const float subtick, const u64 timer_old,
@@ -196,6 +196,9 @@ static void render(const float subtick, const u64 timer_old,
 			 * TODO: LERP ANGLE *
 			 ********************/
 			player.angles_new[0]);
+	T3DVec3 weapon_hold_current;
+	t3d_vec3_lerp(&weapon_hold_current, &weapon_hold_current_old,
+		      &weapon_hold_current_new, subtick);
 	t3d_mat4_translate(&viewmodel_mat, weapon_hold_current.v[0],
 			   weapon_hold_current.v[1], weapon_hold_current.v[2]);
 	t3d_mat4_to_fixed(viewmodel_mat_fp, &viewmodel_mat);
